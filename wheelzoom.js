@@ -11,6 +11,8 @@ window.wheelzoom = (function () {
     initialX: 0.5,
     initialY: 0.5,
     maxMultiplier: 3,
+    acceptableMoving: 10,
+    mouseMoveNoZoom: false,
   };
 
   var main = function (img, options) {
@@ -29,6 +31,9 @@ window.wheelzoom = (function () {
     var transparentSpaceFiller;
     var multiplier = 1;
     var mouseDownDone;
+    var moveX;
+    var moveY;
+    var mouseMove = false;
 
     function setSrcToBackground(img) {
       img.style.backgroundRepeat = "no-repeat";
@@ -102,6 +107,8 @@ window.wheelzoom = (function () {
       bgPosX = offset.X - bgWidth * bgRatio.X;
       bgPosY = offset.Y - bgHeight * bgRatio.Y;
 
+      moveY = bgPosY;
+      moveX = bgPosX;
       // Prevent zooming out beyond the starting size
       if (bgWidth <= width || bgHeight <= height) {
         reset();
@@ -111,6 +118,11 @@ window.wheelzoom = (function () {
     }
 
     function multiply(e) {
+      if (mouseMove) {
+        if (blockMoveZoom()) {
+          return false;
+        }
+      }
       // assure that does not zoom if holding the click
       if (mouseHoldTimeout) {
         clearTimeout(mouseHoldTimeout);
@@ -119,6 +131,24 @@ window.wheelzoom = (function () {
       if (mouseDownDone) {
         mouseDownDone = false;
         return;
+      }
+
+      function blockMoveZoom() {
+        // if mouseMoveNozoom = true don't zoom
+        if (settings.mouseMoveNoZoom) {
+          return true;
+        } else {
+          // if mouse moves more than acceptableMoving don't zoom
+          if (
+            moveX - bgPosX > settings.acceptableMoving ||
+            moveY - bgPosY > settings.acceptableMoving ||
+            moveX - bgPosX < -settings.acceptableMoving ||
+            moveY - bgPosY < -settings.acceptableMoving
+          ) {
+            return true;
+          }
+        }
+        return false;
       }
 
       addEventListener;
@@ -181,6 +211,7 @@ window.wheelzoom = (function () {
     }
 
     function drag(e) {
+      mouseMove = true;
       e.preventDefault();
       bgPosX += e.pageX - previousEvent.pageX;
       bgPosY += e.pageY - previousEvent.pageY;
@@ -202,6 +233,8 @@ window.wheelzoom = (function () {
       }, 300);
       e.preventDefault();
       previousEvent = e;
+      moveY = bgPosY;
+      moveX = bgPosX;
       document.addEventListener("mousemove", drag);
       document.addEventListener("mouseup", removeDrag);
     }
@@ -280,3 +313,8 @@ window.wheelzoom = (function () {
     };
   }
 })();
+
+// initialize the script
+wheelzoom(document.querySelectorAll("img.zoom"), {
+  maxMultiplier: 5,
+});

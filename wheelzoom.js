@@ -10,9 +10,12 @@ window.wheelzoom = (function () {
     initialZoom: 1,
     initialX: 0.5,
     initialY: 0.5,
-    maxMultiplier: 3,
+    maxMultiplier: 2,
     acceptableMoving: 10,
     mouseMoveNoZoom: false,
+    holdClickZoom: true,
+    holdClickTimeout: 500,
+    parentDepth: 0,
   };
 
   var main = function (img, options) {
@@ -34,6 +37,10 @@ window.wheelzoom = (function () {
     var moveX;
     var moveY;
     var mouseMove = false;
+
+    if (settings.maxMultiplier !== 0) {
+      cursorStyle("zoom-in");
+    }
 
     function setSrcToBackground(img) {
       img.style.backgroundRepeat = "no-repeat";
@@ -124,15 +131,16 @@ window.wheelzoom = (function () {
         }
       }
       // assure that does not zoom if holding the click
-      if (mouseHoldTimeout) {
-        clearTimeout(mouseHoldTimeout);
-        mouseHoldTimeout = null;
+      if (!settings.holdClickZoom) {
+        if (mouseHoldTimeout) {
+          clearTimeout(mouseHoldTimeout);
+          mouseHoldTimeout = null;
+        }
+        if (mouseDownDone) {
+          mouseDownDone = false;
+          return;
+        }
       }
-      if (mouseDownDone) {
-        mouseDownDone = false;
-        return;
-      }
-
       function blockMoveZoom() {
         // if mouseMoveNozoom = true don't zoom
         if (settings.mouseMoveNoZoom) {
@@ -152,7 +160,15 @@ window.wheelzoom = (function () {
       }
 
       addEventListener;
-      multiplier = settings.maxMultiplier < multiplier ? 1 : multiplier + 1;
+
+      if (settings.maxMultiplier < multiplier) {
+        multiplier = 1;
+      } else if (settings.maxMultiplier == multiplier) {
+        multiplier = multiplier + 1;
+        cursorStyle("zoom-out");
+      } else {
+        multiplier = multiplier + 1;
+      }
 
       var offset = getCursorPosition(e);
       var bgRatio = getCursorRatio(offset);
@@ -220,17 +236,33 @@ window.wheelzoom = (function () {
     }
 
     function removeDrag() {
+      cursorStyle("zoom-in");
       document.removeEventListener("mouseup", removeDrag);
       document.removeEventListener("mousemove", drag);
     }
 
+    function cursorStyle(cursor) {
+      let parentDepth = settings.parentDepth;
+      img.style.cursor = cursor;
+      let element = img;
+      if (parentDepth > 0) {
+        for (var i = 1; i <= parentDepth; i++) {
+          element.parentNode.style.cursor = cursor;
+          element = element.parentNode;
+        }
+      }
+    }
+
     // Make the background draggable
     function draggable(e) {
-      // if mousedown for more than 300ms
+      cursorStyle("grabbing");
+      // if mousedown for more than holdClickTimeout
       // the multiply function does not get called
-      mouseHoldTimeout = setTimeout(() => {
-        mouseDownDone = true;
-      }, 300);
+      if (!settings.holdClickZoom) {
+        mouseHoldTimeout = setTimeout(() => {
+          mouseDownDone = true;
+        }, settings.holdClickTimeout);
+      }
       e.preventDefault();
       previousEvent = e;
       moveY = bgPosY;
@@ -313,8 +345,3 @@ window.wheelzoom = (function () {
     };
   }
 })();
-
-// initialize the script
-wheelzoom(document.querySelectorAll("img.zoom"), {
-  maxMultiplier: 5,
-});

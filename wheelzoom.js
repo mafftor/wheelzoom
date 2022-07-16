@@ -3,202 +3,345 @@
 	license: MIT
 	http://www.jacklmoore.com/wheelzoom
 */
-window.wheelzoom = (function(){
-	var defaults = {
-		zoom: 0.10,
-		maxZoom: false,
-		initialZoom: 1,
-		initialX: 0.5,
-		initialY: 0.5,
-	};
+window.wheelzoom = (function () {
+  var defaults = {
+    zoom: 0.1,
+    maxZoom: false,
+    initialZoom: 1,
+    initialX: 0.5,
+    initialY: 0.5,
+    maxMultiplier: 2,
+    acceptableMoving: 10,
+    mouseMoveNoZoom: false,
+    holdClickZoom: true,
+    holdClickTimeout: 500,
+    parentDepth: 0,
+  };
 
-	var main = function(img, options){
-		if (!img || !img.nodeName || img.nodeName !== 'IMG') { return; }
+  var main = function (img, options) {
+    if (!img || !img.nodeName || img.nodeName !== "IMG") {
+      return;
+    }
 
-		var settings = {};
-		var width;
-		var height;
-		var bgWidth;
-		var bgHeight;
-		var bgPosX;
-		var bgPosY;
-		var previousEvent;
-		var transparentSpaceFiller;
+    var settings = {};
+    var width;
+    var height;
+    var bgWidth;
+    var bgHeight;
+    var bgPosX;
+    var bgPosY;
+    var previousEvent;
+    var transparentSpaceFiller;
+    var multiplier = 1;
+    var mouseDownDone;
+    var moveX;
+    var moveY;
+    var mouseMove = false;
 
-		function setSrcToBackground(img) {
-			img.style.backgroundRepeat = 'no-repeat';
-			img.style.backgroundImage = 'url("'+img.src+'")';
-			transparentSpaceFiller = 'data:image/svg+xml;base64,'+window.btoa('<svg xmlns="http://www.w3.org/2000/svg" width="'+img.naturalWidth+'" height="'+img.naturalHeight+'"></svg>');
-			img.src = transparentSpaceFiller;
-		}
+    if (settings.maxMultiplier !== 0) {
+      cursorStyle("zoom-in");
+    }
 
-		function updateBgStyle() {
-			if (bgPosX > 0) {
-				bgPosX = 0;
-			} else if (bgPosX < width - bgWidth) {
-				bgPosX = width - bgWidth;
-			}
+    function setSrcToBackground(img) {
+      img.style.backgroundRepeat = "no-repeat";
+      img.style.backgroundImage = 'url("' + img.src + '")';
+      transparentSpaceFiller =
+        "data:image/svg+xml;base64," +
+        window.btoa(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+            img.naturalWidth +
+            '" height="' +
+            img.naturalHeight +
+            '"></svg>'
+        );
+      img.src = transparentSpaceFiller;
+    }
 
-			if (bgPosY > 0) {
-				bgPosY = 0;
-			} else if (bgPosY < height - bgHeight) {
-				bgPosY = height - bgHeight;
-			}
+    function updateBgStyle() {
+      if (bgPosX > 0) {
+        bgPosX = 0;
+      } else if (bgPosX < width - bgWidth) {
+        bgPosX = width - bgWidth;
+      }
 
-			img.style.backgroundSize = bgWidth+'px '+bgHeight+'px';
-			img.style.backgroundPosition = bgPosX+'px '+bgPosY+'px';
-		}
+      if (bgPosY > 0) {
+        bgPosY = 0;
+      } else if (bgPosY < height - bgHeight) {
+        bgPosY = height - bgHeight;
+      }
 
-		function reset() {
-			bgWidth = width;
-			bgHeight = height;
-			bgPosX = bgPosY = 0;
-			updateBgStyle();
-		}
+      img.style.backgroundSize = bgWidth + "px " + bgHeight + "px";
+      img.style.backgroundPosition = bgPosX + "px " + bgPosY + "px";
+    }
 
-		function onwheel(e) {
-			var deltaY = 0;
+    function reset() {
+      bgWidth = width;
+      bgHeight = height;
+      bgPosX = bgPosY = 0;
+      updateBgStyle();
+    }
 
-			e.preventDefault();
+    function onwheel(e) {
+      var deltaY = 0;
 
-			if (e.deltaY) { // FireFox 17+ (IE9+, Chrome 31+?)
-				deltaY = e.deltaY;
-			} else if (e.wheelDelta) {
-				deltaY = -e.wheelDelta;
-			}
+      e.preventDefault();
 
-			// As far as I know, there is no good cross-browser way to get the cursor position relative to the event target.
-			// We have to calculate the target element's position relative to the document, and subtrack that from the
-			// cursor's position relative to the document.
-			var rect = img.getBoundingClientRect();
-			var offsetX = e.pageX - rect.left - window.pageXOffset;
-			var offsetY = e.pageY - rect.top - window.pageYOffset;
+      if (e.deltaY) {
+        // FireFox 17+ (IE9+, Chrome 31+?)
+        deltaY = e.deltaY;
+      } else if (e.wheelDelta) {
+        deltaY = -e.wheelDelta;
+      }
 
-			// Record the offset between the bg edge and cursor:
-			var bgCursorX = offsetX - bgPosX;
-			var bgCursorY = offsetY - bgPosY;
-			
-			// Use the previous offset to get the percent offset between the bg edge and cursor:
-			var bgRatioX = bgCursorX/bgWidth;
-			var bgRatioY = bgCursorY/bgHeight;
+      var offset = getCursorPosition(e);
+      var bgRatio = getCursorRatio(offset);
 
-			// Update the bg size:
-			if (deltaY < 0) {
-				bgWidth += bgWidth*settings.zoom;
-				bgHeight += bgHeight*settings.zoom;
-			} else {
-				bgWidth -= bgWidth*settings.zoom;
-				bgHeight -= bgHeight*settings.zoom;
-			}
+      // Update the bg size:
+      if (deltaY < 0) {
+        bgWidth += bgWidth * settings.zoom;
+        bgHeight += bgHeight * settings.zoom;
+      } else {
+        bgWidth -= bgWidth * settings.zoom;
+        bgHeight -= bgHeight * settings.zoom;
+      }
 
-			if (settings.maxZoom) {
-				bgWidth = Math.min(width*settings.maxZoom, bgWidth);
-				bgHeight = Math.min(height*settings.maxZoom, bgHeight);
-			}
+      if (settings.maxZoom) {
+        bgWidth = Math.min(width * settings.maxZoom, bgWidth);
+        bgHeight = Math.min(height * settings.maxZoom, bgHeight);
+      }
 
-			// Take the percent offset and apply it to the new size:
-			bgPosX = offsetX - (bgWidth * bgRatioX);
-			bgPosY = offsetY - (bgHeight * bgRatioY);
+      // Take the percent offset and apply it to the new size:
+      bgPosX = offset.X - bgWidth * bgRatio.X;
+      bgPosY = offset.Y - bgHeight * bgRatio.Y;
 
-			// Prevent zooming out beyond the starting size
-			if (bgWidth <= width || bgHeight <= height) {
-				reset();
-			} else {
-				updateBgStyle();
-			}
-		}
+      moveY = bgPosY;
+      moveX = bgPosX;
+      // Prevent zooming out beyond the starting size
+      if (bgWidth <= width || bgHeight <= height) {
+        reset();
+      } else {
+        updateBgStyle();
+      }
+    }
 
-		function drag(e) {
-			e.preventDefault();
-			bgPosX += (e.pageX - previousEvent.pageX);
-			bgPosY += (e.pageY - previousEvent.pageY);
-			previousEvent = e;
-			updateBgStyle();
-		}
+    function multiply(e) {
+      if (mouseMove) {
+        if (blockMoveZoom()) {
+          return false;
+        }
+      }
+      // assure that does not zoom if holding the click
+      if (!settings.holdClickZoom) {
+        if (mouseHoldTimeout) {
+          clearTimeout(mouseHoldTimeout);
+          mouseHoldTimeout = null;
+        }
+        if (mouseDownDone) {
+          mouseDownDone = false;
+          return;
+        }
+      }
+      function blockMoveZoom() {
+        // if mouseMoveNozoom = true don't zoom
+        if (settings.mouseMoveNoZoom) {
+          return true;
+        } else {
+          // if mouse moves more than acceptableMoving don't zoom
+          if (
+            moveX - bgPosX > settings.acceptableMoving ||
+            moveY - bgPosY > settings.acceptableMoving ||
+            moveX - bgPosX < -settings.acceptableMoving ||
+            moveY - bgPosY < -settings.acceptableMoving
+          ) {
+            return true;
+          }
+        }
+        return false;
+      }
 
-		function removeDrag() {
-			document.removeEventListener('mouseup', removeDrag);
-			document.removeEventListener('mousemove', drag);
-		}
+      addEventListener;
 
-		// Make the background draggable
-		function draggable(e) {
-			e.preventDefault();
-			previousEvent = e;
-			document.addEventListener('mousemove', drag);
-			document.addEventListener('mouseup', removeDrag);
-		}
+      if (settings.maxMultiplier < multiplier) {
+        multiplier = 1;
+      } else if (settings.maxMultiplier == multiplier) {
+        multiplier = multiplier + 1;
+        cursorStyle("zoom-out");
+      } else {
+        multiplier = multiplier + 1;
+      }
 
-		function load() {
-			var initial = Math.max(settings.initialZoom, 1);
+      var offset = getCursorPosition(e);
+      var bgRatio = getCursorRatio(offset);
 
-			if (img.src === transparentSpaceFiller) return;
+      // Update the bg size:
+      bgWidth = width * multiplier;
+      bgHeight = height * multiplier;
 
-			var computedStyle = window.getComputedStyle(img, null);
+      if (settings.maxZoom) {
+        bgWidth = Math.min(width * settings.maxZoom, bgWidth);
+        bgHeight = Math.min(height * settings.maxZoom, bgHeight);
+      }
 
-			width = parseInt(computedStyle.width, 10);
-			height = parseInt(computedStyle.height, 10);
-			bgWidth = width * initial;
-			bgHeight = height * initial;
-			bgPosX = -(bgWidth - width) * settings.initialX;
-			bgPosY = -(bgHeight - height) * settings.initialY;
+      // Take the percent offset and apply it to the new size:
+      bgPosX = offset.X - bgWidth * bgRatio.X;
+      bgPosY = offset.Y - bgHeight * bgRatio.Y;
 
-			setSrcToBackground(img);
+      // Prevent zooming out beyond the starting size
+      if (bgWidth <= width || bgHeight <= height) {
+        reset();
+      } else {
+        updateBgStyle();
+      }
+    }
 
-			img.style.backgroundSize = bgWidth+'px '+bgHeight+'px';
-			img.style.backgroundPosition = bgPosX+'px '+bgPosY+'px';
-			img.addEventListener('wheelzoom.reset', reset);
+    // Use the previous offset to get the percent offset between the bg edge and cursor:
+    function getCursorRatio(offset) {
+      var bgCursor = getCursorOffset(offset);
 
-			img.addEventListener('wheel', onwheel);
-			img.addEventListener('mousedown', draggable);
-		}
+      return {
+        X: bgCursor.X / bgWidth,
+        Y: bgCursor.Y / bgHeight,
+      };
+    }
 
-		var destroy = function (originalProperties) {
-			img.removeEventListener('wheelzoom.destroy', destroy);
-			img.removeEventListener('wheelzoom.reset', reset);
-			img.removeEventListener('load', load);
-			img.removeEventListener('mouseup', removeDrag);
-			img.removeEventListener('mousemove', drag);
-			img.removeEventListener('mousedown', draggable);
-			img.removeEventListener('wheel', onwheel);
+    // Record the offset between the bg edge and cursor:
+    function getCursorOffset(offset) {
+      return {
+        X: offset.X - bgPosX,
+        Y: offset.Y - bgPosY,
+      };
+    }
 
-			img.style.backgroundImage = originalProperties.backgroundImage;
-			img.style.backgroundRepeat = originalProperties.backgroundRepeat;
-			img.src = originalProperties.src;
-		}.bind(null, {
-			backgroundImage: img.style.backgroundImage,
-			backgroundRepeat: img.style.backgroundRepeat,
-			src: img.src
-		});
+    // As far as I know, there is no good cross-browser way to get the cursor position relative to the event target.
+    // We have to calculate the target element's position relative to the document, and subtrack that from the
+    // cursor's position relative to the document.
+    function getCursorPosition(e) {
+      var rect = img.getBoundingClientRect();
+      var offsetX = e.pageX - rect.left - window.pageXOffset;
+      var offsetY = e.pageY - rect.top - window.pageYOffset;
 
-		img.addEventListener('wheelzoom.destroy', destroy);
+      return {
+        X: offsetX,
+        Y: offsetY,
+      };
+    }
 
-		options = options || {};
+    function drag(e) {
+      mouseMove = true;
+      e.preventDefault();
+      bgPosX += e.pageX - previousEvent.pageX;
+      bgPosY += e.pageY - previousEvent.pageY;
+      previousEvent = e;
+      updateBgStyle();
+    }
 
-		Object.keys(defaults).forEach(function(key){
-			settings[key] = options[key] !== undefined ? options[key] : defaults[key];
-		});
+    function removeDrag() {
+      cursorStyle("zoom-in");
+      document.removeEventListener("mouseup", removeDrag);
+      document.removeEventListener("mousemove", drag);
+    }
 
-		if (img.complete) {
-			load();
-		}
+    function cursorStyle(cursor) {
+      let parentDepth = settings.parentDepth;
+      img.style.cursor = cursor;
+      let element = img;
+      if (parentDepth > 0) {
+        for (var i = 1; i <= parentDepth; i++) {
+          element.parentNode.style.cursor = cursor;
+          element = element.parentNode;
+        }
+      }
+    }
 
-		img.addEventListener('load', load);
-	};
+    // Make the background draggable
+    function draggable(e) {
+      cursorStyle("grabbing");
+      // if mousedown for more than holdClickTimeout
+      // the multiply function does not get called
+      if (!settings.holdClickZoom) {
+        mouseHoldTimeout = setTimeout(() => {
+          mouseDownDone = true;
+        }, settings.holdClickTimeout);
+      }
+      e.preventDefault();
+      previousEvent = e;
+      moveY = bgPosY;
+      moveX = bgPosX;
+      document.addEventListener("mousemove", drag);
+      document.addEventListener("mouseup", removeDrag);
+    }
 
-	// Do nothing in IE9 or below
-	if (typeof window.btoa !== 'function') {
-		return function(elements) {
-			return elements;
-		};
-	} else {
-		return function(elements, options) {
-			if (elements && elements.length) {
-				Array.prototype.forEach.call(elements, main, options);
-			} else if (elements && elements.nodeName) {
-				main(elements, options);
-			}
-			return elements;
-		};
-	}
-}());
+    function load() {
+      var initial = Math.max(settings.initialZoom, 1);
+
+      if (img.src === transparentSpaceFiller) return;
+
+      var computedStyle = window.getComputedStyle(img, null);
+
+      width = parseInt(computedStyle.width, 10);
+      height = parseInt(computedStyle.height, 10);
+      bgWidth = width * initial;
+      bgHeight = height * initial;
+      bgPosX = -(bgWidth - width) * settings.initialX;
+      bgPosY = -(bgHeight - height) * settings.initialY;
+
+      setSrcToBackground(img);
+
+      img.style.backgroundSize = bgWidth + "px " + bgHeight + "px";
+      img.style.backgroundPosition = bgPosX + "px " + bgPosY + "px";
+      img.addEventListener("wheelzoom.reset", reset);
+
+      img.addEventListener("wheel", onwheel);
+      img.addEventListener("mousedown", draggable);
+      img.addEventListener("click", multiply);
+    }
+
+    var destroy = function (originalProperties) {
+      img.removeEventListener("wheelzoom.destroy", destroy);
+      img.removeEventListener("wheelzoom.reset", reset);
+      img.removeEventListener("load", load);
+      img.removeEventListener("mouseup", removeDrag);
+      img.removeEventListener("mousemove", drag);
+      img.removeEventListener("mousedown", draggable);
+      img.removeEventListener("wheel", onwheel);
+
+      img.style.backgroundImage = originalProperties.backgroundImage;
+      img.style.backgroundRepeat = originalProperties.backgroundRepeat;
+      img.src = originalProperties.src;
+    }.bind(null, {
+      backgroundImage: img.style.backgroundImage,
+      backgroundRepeat: img.style.backgroundRepeat,
+      src: img.src,
+    });
+
+    img.addEventListener("wheelzoom.destroy", destroy);
+
+    options = options || {};
+
+    Object.keys(defaults).forEach(function (key) {
+      settings[key] = options[key] !== undefined ? options[key] : defaults[key];
+    });
+
+    if (img.complete) {
+      load();
+    }
+
+    img.addEventListener("load", load);
+  };
+
+  // Do nothing in IE9 or below
+  if (typeof window.btoa !== "function") {
+    return function (elements) {
+      return elements;
+    };
+  } else {
+    return function (elements, options) {
+      if (elements && elements.length) {
+        Array.prototype.forEach.call(elements, main, options);
+      } else if (elements && elements.nodeName) {
+        main(elements, options);
+      }
+      return elements;
+    };
+  }
+})();
